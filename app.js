@@ -1620,6 +1620,11 @@ if (state.selectedDate) {
                                 <button onclick="toggleDeleteMenu()" class="${navBtnClass} hover:text-red-500" title="Sil">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                                 </button>
+                                <button onclick="handleLogout()" class="${navBtnClass} hover:text-red-500" title="Çıkış Yap">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                    </svg>
+                                </button>
                             </div>
 
                             <div class="relative md:hidden">
@@ -1637,6 +1642,9 @@ if (state.selectedDate) {
                                         </button>
                                         <button onclick="toggleDeleteMenu(); toggleMobileMenu()" class="text-left px-4 py-3 flex items-center gap-3 text-red-500 hover:bg-red-50">
                                             <span>🗑️</span> Verileri Sil
+                                        </button>
+                                        <button onclick="handleLogout()" class="text-left px-4 py-3 flex items-center gap-3 text-red-500 hover:bg-red-50 font-bold border-t ${isDark ? 'border-gray-700' : 'border-gray-100'} mt-1">
+                                            <span>🚪</span> Çıkış Yap
                                         </button>
                                     </div>
                                 ` : ''}
