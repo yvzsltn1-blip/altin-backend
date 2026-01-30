@@ -1545,7 +1545,12 @@ if (state.selectedDate) {
                                         <span class="text-sm font-semibold">${period.name}</span>
                                     </div>
                                     <div class="flex items-center gap-2">
-                                        ${isSelectedPeriod && periodData ? `<span class="font-bold text-sm">₺${formatTL(periodData.total)}</span>` : ''}
+                                        ${isSelectedPeriod && periodData ? `
+                                            <div class="flex items-center gap-2 mr-1">
+                                                <span class="text-[10px] opacity-60 font-medium tracking-tight">≈${periodData.totalGold.toFixed(4)}g</span>
+                                                <span class="font-bold text-sm">₺${formatTL(periodData.total)}</span>
+                                            </div>
+                                        ` : ''}
                                         <svg class="w-4 h-4 text-white/70 transition-transform ${isSelectedPeriod ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                                     </div>
                                 </div>
@@ -1818,7 +1823,23 @@ ${state.subcategoryEditMode ? `
                                 ${state.editingExpense ? `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Güncelle` : `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg> Ekle`}
                             </button>
                         </div>
-                        ${selDateExps.length > 0 ? `<div class="border-t ${isDark ? 'border-gray-700' : 'border-gray-100'} pt-4"><h4 class="text-xs font-bold ${isDark ? 'text-gray-500' : 'text-gray-400'} uppercase mb-3">Bugünkü Harcamalar</h4>${expListHTML}</div>` : ''}
+                        ${selDateExps.length > 0 ? (() => {
+                            // Günlük toplamları hesapla
+                            const dayTotalTL = selDateExps.reduce((acc, curr) => acc + curr.amount, 0);
+                            const dayTotalGold = selDateExps.reduce((acc, curr) => acc + (parseFloat(curr.goldGrams) || 0), 0);
+                            
+                            return `
+                            <div class="border-t ${isDark ? 'border-gray-700' : 'border-gray-100'} pt-4">
+                                <div class="flex justify-between items-end mb-3">
+                                    <h4 class="text-xs font-bold ${isDark ? 'text-gray-500' : 'text-gray-400'} uppercase">Bugünkü Harcamalar</h4>
+                                    <div class="text-right flex items-center gap-2">
+                                         <span class="text-[10px] ${isDark ? 'text-amber-400/60' : 'text-amber-600/60'} font-medium">≈${dayTotalGold.toFixed(4)}g</span>
+                                         <span class="text-sm font-bold ${isDark ? 'text-white' : 'text-amber-900'}">₺${formatTL(dayTotalTL)}</span>
+                                    </div>
+                                </div>
+                                ${expListHTML}
+                            </div>`;
+                        })() : ''}
                     </div>
                 </div>
             </div>

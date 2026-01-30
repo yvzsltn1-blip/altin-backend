@@ -1,10 +1,11 @@
 // sw.js
-const CACHE_NAME = 'altin-butce-v2';
+const CACHE_NAME = 'altin-butce-v3';
 const urlsToCache = [
   './',
   './index.html',
   './style.css',
-  './app.js',
+  'js/app.js',
+  'js/budget.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
