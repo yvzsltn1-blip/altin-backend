@@ -1,0 +1,205 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700&family=Playfair+Display:wght@700;900&display=swap');
+
+body { font-family: 'Outfit', sans-serif; }
+
+/* Altın Parlama Efekti */
+.gold-shimmer {
+    background: linear-gradient(90deg, #d4af37 0%, #f4e4a6 25%, #d4af37 50%, #f4e4a6 75%, #d4af37 100%);
+    background-size: 200% auto;
+    animation: shimmer 3s ease-in-out infinite;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+@keyframes shimmer {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+/* Gölgeler ve Kartlar */
+.card-shadow { box-shadow: 0 25px 50px -12px rgba(180, 140, 60, 0.15); }
+.day-cell:hover { transform: translateY(-2px); }
+
+/* Animasyonlar */
+.modal-enter { animation: modalIn 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes modalIn {
+    from { opacity: 0; transform: scale(0.95) translateY(10px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.animate-spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* YENİ: Pürüzsüz Akordeon Animasyonu (Gözü yormayan kısım burası) */
+.accordion-wrapper {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 0;
+}
+.accordion-wrapper.open {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    margin-top: 0.5rem; /* Açılınca biraz boşluk bırak */
+}
+.accordion-inner {
+    overflow: hidden;
+}
+
+/* Genel detay açılış animasyonu */
+.details-enter {
+    animation: fadeInSlide 0.4s ease-out forwards;
+}
+@keyframes fadeInSlide {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================= */
+/* KARANLIK MOD STİLLERİ */
+/* ============================= */
+
+/* Dark Mode Geçiş */
+.dark body,
+body.dark-mode {
+    background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 50%, #0f0f0f 100%);
+}
+
+/* Dark Mode Card Shadow */
+.dark .card-shadow {
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 
+                0 0 0 1px rgba(212, 175, 55, 0.1);
+}
+
+/* Dark Mode Gold Shimmer */
+.dark .gold-shimmer {
+    background: linear-gradient(90deg, #ffd700 0%, #fff8dc 25%, #ffd700 50%, #fff8dc 75%, #ffd700 100%);
+    background-size: 200% auto;
+    animation: shimmer 3s linear infinite;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* Dark Mode Input Focus */
+.dark input:focus {
+    border-color: #d4af37 !important;
+    box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.2);
+}
+
+/* Dark Mode Scrollbar */
+.dark ::-webkit-scrollbar {
+    width: 8px;
+}
+.dark ::-webkit-scrollbar-track {
+    background: #1a1a1a;
+}
+.dark ::-webkit-scrollbar-thumb {
+    background: #333;
+    border-radius: 4px;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+    background: #444;
+}
+
+/* Toggle Switch Stili */
+.toggle-switch {
+    position: relative;
+    width: 48px;
+    height: 26px;
+    background: #e5e5e5;
+    border-radius: 13px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.toggle-switch.active {
+    background: linear-gradient(135deg, #d4af37, #f4e4a6);
+}
+
+.toggle-switch::after {
+    content: '';
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    background: white;
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.toggle-switch.active::after {
+    left: 24px;
+}
+
+/* Export Dropdown */
+.export-dropdown {
+    animation: dropdownIn 0.2s ease-out;
+}
+
+@keyframes dropdownIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Edit Mode Highlight */
+.edit-highlight {
+    animation: editPulse 0.5s ease;
+}
+
+@keyframes editPulse {
+    0% { box-shadow: 0 0 0 0 rgba(212, 175, 55, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(212, 175, 55, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(212, 175, 55, 0); }
+}
+
+/* Toast Notification */
+.toast {
+    animation: toastIn 0.3s ease-out, toastOut 0.3s ease-in 2.7s forwards;
+}
+
+@keyframes toastIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes toastOut {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+}
+
+/* --- YENİ: Altın Işıltı Efekti --- */
+@keyframes shimmer {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+.animate-shimmer {
+    animation: shimmer 3s ease-in-out infinite;
+    background-size: 200% auto;
+}
+
+/* Başlık yazı tipi için (isteğe bağlı ama şık durur) */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&display=swap');
