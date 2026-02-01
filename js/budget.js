@@ -1,114 +1,142 @@
-// budget.js - Akıllı Maaş Döngüsü Versiyonu 🧠
+// budget.js - Kompakt & Şık Versiyon 🤏✨
 
 export function getBudgetHTML(state, isDark, formatTL, monthNames) {
     const limit = state.monthlyBudget || 0;
-    const startDay = state.budgetStartDay || 1; // Kullanıcının seçtiği gün (Örn: 15)
+    const startDay = state.budgetStartDay || 1; 
 
     // --- TARİH HESAPLAMA MOTORU ---
     const today = new Date();
+    today.setHours(0, 0, 0, 0); 
+    
     let startDate, endDate;
 
-    // Eğer bugün, seçilen günden büyükse veya eşitse (Örn: Bugün ayın 20'si, Maaş 15'i)
-    // O zaman döngü BU AYIN 15'inde başladı.
     if (today.getDate() >= startDay) {
         startDate = new Date(today.getFullYear(), today.getMonth(), startDay);
-        // Bitiş tarihi: Gelecek ayın (seçilen gün - 1)'i
         endDate = new Date(today.getFullYear(), today.getMonth() + 1, startDay - 1); 
-    } 
-    // Eğer bugün, seçilen günden küçükse (Örn: Bugün ayın 10'u, Maaş 15'i)
-    // O zaman döngü GEÇEN AYIN 15'inde başladı.
-    else {
+    } else {
         startDate = new Date(today.getFullYear(), today.getMonth() - 1, startDay);
         endDate = new Date(today.getFullYear(), today.getMonth(), startDay - 1);
     }
+    
+    startDate.setHours(0,0,0,0);
+    endDate.setHours(23,59,59,999);
 
-    // Saat ayarı (Tam kapsama için)
-    startDate.setHours(0, 0, 0, 0);
-    endDate.setHours(23, 59, 59, 999);
-
-    // Başlık metni oluştur (Örn: 15 Oca - 14 Şub)
-    const startStr = `${startDate.getDate()} ${monthNames[startDate.getMonth()].slice(0,3)}`;
-    const endStr = `${endDate.getDate()} ${monthNames[endDate.getMonth()].slice(0,3)}`;
     const periodTitle = startDay === 1 
-        ? `AYLIK BÜTÇE (${monthNames[today.getMonth()]})` // Ayın 1'i ise klasik göster
-        : `DÖNEM BÜTÇESİ (${startStr} - ${endStr})`;    // Değilse aralık göster
+        ? `${monthNames[today.getMonth()]} Bütçesi` 
+        : `Dönem: ${startDate.getDate()} ${monthNames[startDate.getMonth()].slice(0,3)} - ${endDate.getDate()} ${monthNames[endDate.getMonth()].slice(0,3)}`;    
 
     // --- HARCAMA TOPLAMA ---
     let currentPeriodTotal = 0;
-    
-    // Tüm harcamaları gez ve tarih aralığına uyanları topla
     for (const dateKey in state.expenses) {
-        // dateKey formatı: "2026-01-30" -> Date objesine çevir
         const expDate = new Date(dateKey);
-        expDate.setHours(12, 0, 0, 0); // Saat farkı sorunu olmasın diye öğlen yapıyoruz
+        expDate.setHours(12, 0, 0, 0); 
 
         if (expDate >= startDate && expDate <= endDate) {
             state.expenses[dateKey].forEach(exp => currentPeriodTotal += exp.amount);
         }
     }
 
-    // --- HTML ÇIKTISI (Eski kodla aynı, sadece başlık dinamik) ---
-    
+    // --- BÜTÇE YOKSA ---
     if (limit === 0) {
         return `
-            <div onclick="setMonthlyBudget()" class="mb-6 cursor-pointer group">
-                <div class="${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-amber-100'} border rounded-xl p-4 card-shadow flex items-center justify-between transition-all hover:scale-[1.01]">
-                    <div class="flex items-center gap-3">
-                        <div class="p-2 rounded-full ${isDark ? 'bg-gray-700 text-gray-400' : 'bg-amber-50 text-amber-600'} group-hover:bg-amber-500 group-hover:text-white transition-colors">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            <div onclick="openBudgetModal()" class="mb-4 cursor-pointer group">
+                <div class="${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-amber-100'} border rounded-2xl p-4 card-shadow flex items-center justify-between transition-all hover:scale-[1.01] relative overflow-hidden">
+                    <div class="flex items-center gap-3 z-10">
+                        <div class="p-2 rounded-full ${isDark ? 'bg-gray-700 text-amber-400' : 'bg-amber-50 text-amber-600'} group-hover:bg-amber-500 group-hover:text-white transition-colors duration-300">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
                         </div>
                         <div>
-                            <div class="font-bold text-sm ${isDark ? 'text-gray-200' : 'text-gray-800'}">Bütçe Döngüsü Belirle</div>
-                            <div class="text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}">Maaş gününü ve limitini ayarla</div>
+                            <div class="font-bold text-sm ${isDark ? 'text-gray-200' : 'text-gray-800'}">Bütçe Hedefi Belirle</div>
+                            <div class="text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-500'}">Aylık harcama limitini ayarla</div>
                         </div>
                     </div>
-                    <span class="text-amber-500 font-bold text-sm">+ Ayarla</span>
                 </div>
             </div>
         `;
     }
 
-    // Hesaplamalar
-    const percent = Math.min((currentPeriodTotal / limit) * 100, 100);
-    let barColor = 'bg-green-500'; 
-    let message = 'Harika gidiyorsun! 👍';
+    // --- ANALİZ ---
+    const oneDay = 24 * 60 * 60 * 1000;
+    const totalDays = Math.round(Math.abs((endDate - startDate) / oneDay)) + 1;
+    const daysPassed = Math.round(Math.abs((today - startDate) / oneDay)) + 1;
     
-    if (percent > 100) { barColor = 'bg-red-600'; message = 'Limit aşıldı! 🚨'; } 
-    else if (percent > 85) { barColor = 'bg-red-500'; message = 'Dikkat, limit dolmak üzere! ⚠️'; } 
-    else if (percent > 50) { barColor = 'bg-yellow-500'; message = 'Yarısını geçtin.'; }
+    const timePercent = (daysPassed / totalDays) * 100;
+    const budgetPercent = (currentPeriodTotal / limit) * 100;
+    const deviation = budgetPercent - timePercent;
 
+    let barColor = 'bg-emerald-500'; 
+    let message = '';
+    let statusIcon = '👍';
+    
+    if (currentPeriodTotal > limit) {
+        barColor = 'bg-red-600';
+        message = 'Limit aşıldı! 🚨';
+        statusIcon = '🚨';
+    } else {
+        if (deviation < -15) {
+            barColor = 'bg-emerald-500';
+            message = 'Tasarruf modundasın';
+            statusIcon = '👑';
+        } else if (deviation <= 5) {
+            barColor = 'bg-green-500';
+            message = 'Her şey dengeli';
+            statusIcon = '👌';
+        } else if (deviation <= 15) {
+            barColor = 'bg-yellow-500';
+            message = 'Biraz hızlı gidiyorsun';
+            statusIcon = '⚠️';
+        } else {
+            barColor = 'bg-orange-600';
+            message = 'Bütçe alarm veriyor 🔥';
+            statusIcon = '🔥';
+        }
+    }
+
+    const visualPercent = Math.min(budgetPercent, 100);
     const remaining = limit - currentPeriodTotal;
     const remainingText = remaining >= 0 
         ? `Kalan: ₺${formatTL(remaining)}` 
         : `Aşılan: ₺${formatTL(Math.abs(remaining))}`;
 
+    // --- KOMPAKT HTML ---
     return `
-        <div onclick="setMonthlyBudget()" class="mb-6 cursor-pointer group">
-            <div class="${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-amber-100'} border rounded-xl p-4 card-shadow relative overflow-hidden">
+        <div class="mb-4 group relative">
+            <div class="${isDark ? 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700' : 'bg-white border-amber-100'} border rounded-2xl p-4 card-shadow relative overflow-hidden transition-all hover:shadow-md">
                 
-                <div class="flex justify-between items-end mb-2 relative z-10">
+                <button onclick="openBudgetModal()" class="absolute top-3 right-3 z-20 p-1.5 rounded-lg backdrop-blur-md border border-white/10 shadow-sm transition-all duration-300 opacity-50 hover:opacity-100
+                    ${isDark ? 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-amber-400' : 'bg-gray-50 text-gray-400 hover:bg-amber-50 hover:text-amber-600'}">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+                </button>
+
+                <div class="flex justify-between items-end mb-3 relative z-10">
                     <div>
-                        <div class="text-[10px] font-bold ${isDark ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-wider mb-1">${periodTitle}</div>
-                        <div class="text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-800'}" style="font-family: 'Outfit', sans-serif;">
-                            ₺${formatTL(currentPeriodTotal)} 
-                            <span class="text-sm font-normal ${isDark ? 'text-gray-500' : 'text-gray-400'}">/ ₺${formatTL(limit)}</span>
+                        <div class="text-[10px] font-bold ${isDark ? 'text-amber-500/80' : 'text-amber-600/80'} uppercase tracking-wider mb-0.5">${periodTitle}</div>
+                        <div class="flex items-baseline gap-1.5">
+                            <div class="text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-800'}" style="font-family: 'Outfit', sans-serif;">
+                                ₺${formatTL(currentPeriodTotal)}
+                            </div>
+                            <span class="text-xs font-medium ${isDark ? 'text-gray-500' : 'text-gray-400'}">/ ₺${formatTL(limit)}</span>
                         </div>
                     </div>
-                    <div class="text-right">
-                        <div class="text-xs font-bold ${remaining >= 0 ? (isDark ? 'text-green-400' : 'text-green-600') : 'text-red-500'} mb-1">${remainingText}</div>
-                        <div class="text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'}">${message}</div>
+                    
+                    <div class="text-right mr-8">
+                        <div class="text-xs font-bold ${remaining >= 0 ? (isDark ? 'text-emerald-400' : 'text-emerald-600') : 'text-red-500'}">
+                           ${remainingText}
+                        </div>
+                        <div class="text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'}">%${Math.round(budgetPercent)} Harcandı</div>
                     </div>
                 </div>
 
-                <div class="w-full h-3 ${isDark ? 'bg-gray-700' : 'bg-gray-100'} rounded-full overflow-hidden relative z-10">
-                    <div class="h-full ${barColor} transition-all duration-1000 ease-out relative" style="width: ${percent}%">
-                        <div class="absolute inset-0 bg-white/30 w-full h-full animate-[shimmer_2s_infinite]" style="transform: skewX(-20deg);"></div>
-                    </div>
+                <div class="relative h-2.5 ${isDark ? 'bg-gray-700/50' : 'bg-gray-100'} rounded-full overflow-hidden mb-2">
+                    <div class="h-full ${barColor} transition-all duration-1000 ease-out relative" style="width: ${visualPercent}%"></div>
+                    <div class="absolute top-0 bottom-0 w-0.5 bg-black/20 dark:bg-white/30 z-10" style="left: ${Math.min(timePercent, 100)}%" title="Bugün"></div>
                 </div>
 
-                <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <span class="text-xs bg-black/50 text-white px-2 py-1 rounded">✏️ Düzenle</span>
+                <div class="flex items-center gap-2 text-xs">
+                    <span class="text-base">${statusIcon}</span>
+                    <span class="${isDark ? 'text-gray-300' : 'text-gray-600'} font-medium truncate">${message}</span>
                 </div>
+
             </div>
         </div>
     `;

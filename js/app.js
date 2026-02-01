@@ -14,7 +14,7 @@ import {
     reauthenticateWithCredential, 
     EmailAuthProvider
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, deleteDoc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 // EmailJS Yapılandırması
 const EMAILJS_PUBLIC_KEY = "69evAT7YVkcEVLN4E";
@@ -34,6 +34,14 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
+enableIndexedDbPersistence(db)
+  .catch((err) => {
+      if (err.code == 'failed-precondition') {
+          console.log("Çok fazla sekme açık, offline mod sadece tek sekmede çalışır.");
+      } else if (err.code == 'unimplemented') {
+          console.log("Tarayıcınız offline modu desteklemiyor.");
+      }
+  });
 const googleProvider = new GoogleAuthProvider();
 const BACKEND_URL = "https://gold-760939137722.europe-west1.run.app/";
 
@@ -55,6 +63,11 @@ const periods = {
 
 let state = {
     currentUser: null,
+    showSecurityModal: false,   // Şifre sorma ekranı açık mı?
+    securityPassword: '',       // Girilen şifre
+    pendingAction: null,        // Şifre doğruysa çalışacak fonksiyon (Silme işlemi)
+    securityError: '',          // Hata mesajı (Yanlış şifre vs.)
+    showBudgetModal: false, // Yeni bütçe penceresi için kontrol
     showMobileMenu: false, // YENİ: Mobilde açılır menü kontrolü
     budgetStartDay: 1, // YENİ: Varsayılan ayın 1'i
     currentDate: new Date(),
@@ -218,68 +231,112 @@ async function sendVerificationCode(email) {
     }
 }
 
+let timerInterval = null;
+
+function startVerificationTimer() {
+    // Varsa eski sayacı temizle
+    if (timerInterval) clearInterval(timerInterval);
+    
+    // UI'ı hemen güncelle
+    updateTimerUI();
+
+    // Her saniye çalışacak döngü
+    timerInterval = setInterval(() => {
+        const now = Date.now();
+        
+        // Süre doldu mu?
+        if (now > state.codeExpiry) {
+            clearInterval(timerInterval);
+            render(); // Süre doldu ekranını göstermek için render şart
+            return;
+        }
+        
+        // Sadece saati güncelle (Render çağırma!)
+        updateTimerUI();
+    }, 1000);
+}
+
+function updateTimerUI() {
+    // Sayfada sayaç elementi var mı diye bak
+    const timerElement = document.querySelector('[data-timer]');
+    if (!timerElement) return;
+
+    const remaining = Math.max(0, Math.floor((state.codeExpiry - Date.now()) / 1000));
+    const mins = Math.floor(remaining / 60);
+    const secs = remaining % 60;
+    const timeDisplay = `${mins}:${secs.toString().padStart(2, '0')}`;
+    
+    // Rengi ayarla
+    timerElement.className = remaining < 60 ? 'font-mono font-bold text-red-500' : 'font-mono font-bold text-amber-500';
+    timerElement.textContent = timeDisplay;
+}
+
 window.handleRegister = async function() {
+    // 1. E-posta ve şifre girilmiş mi kontrol et
     if (!state.loginForm.email || !state.loginForm.password) return;
     
+    // 2. Şifre uzunluğu kontrolü
     if (state.loginForm.password.length < 6) {
         state.loginError = 'Şifre en az 6 karakter olmalı';
         render();
         return;
     }
     
+    // 3. Yükleniyor moduna al
     state.codeSending = true;
     state.loginError = '';
     render();
     
     try {
-        // Önce 4 haneli kodu gönder
+        // 4. Kodu gönder
         const code = await sendVerificationCode(state.loginForm.email);
         
-        // Kod başarıyla gönderildi - doğrulama ekranına geç
+        // 5. EĞER HATA YOKSA BURASI ÇALIŞIR:
+        // Durumu güncelle (Ekranın değişmesi için en önemli kısım burası)
         state.verificationEmail = state.loginForm.email;
         state.tempPassword = state.loginForm.password;
         state.verificationCode = code;
-        state.codeExpiry = Date.now() + (3 * 60 * 1000); // 3 dakika
+        state.codeExpiry = Date.now() + (3 * 60 * 1000); // 3 dakika süre ver
         state.codeInput = ['', '', '', ''];
-        state.pendingVerification = true;
+        
+        // İŞTE EKRANI DEĞİŞTİREN SİHİRLİ ANAHTAR BU:
+        state.pendingVerification = true; 
+        
         state.codeSending = false;
+        
         showToast('📧 Doğrulama kodu gönderildi!');
         
+        // 6. Ekranı yenile ve sayacı başlat
+        render(); 
+        startVerificationTimer(); 
+        
     } catch (error) {
+        // Hata varsa ekrana yaz
         state.loginError = error.message;
         state.codeSending = false;
+        render();
     }
-    
-    render();
 };
 
 window.handleCodeInput = function(index, value) {
-    // Eğer birden fazla karakter yapıştırıldıysa (paste işlemi)
-    if (value.length > 1) {
-        const digits = value.replace(/\D/g, '').slice(0, 4);
-        state.codeInput = ['', '', '', ''];
-        for (let i = 0; i < digits.length; i++) {
-            state.codeInput[i] = digits[i];
-        }
-        render();
-        // Son dolu kutuya odaklan
-        setTimeout(() => {
-            const nextIndex = Math.min(digits.length, 3);
-            document.getElementById(`code-input-${nextIndex}`)?.focus();
-        }, 0);
-        return;
+    // Sadece sayıları al
+    const digit = value.replace(/\D/g, '').slice(-1); // Son girilen rakamı al
+    
+    // State'i güncelle
+    state.codeInput[index] = digit;
+    
+    // Ekrandaki kutunun değerini güncelle (RENDER ÇAĞIRMADAN)
+    const currentInput = document.getElementById(`code-input-${index}`);
+    if (currentInput) {
+        currentInput.value = digit;
     }
     
-    // Sadece sayı kabul et
-    const digit = value.replace(/\D/g, '');
-    state.codeInput[index] = digit;
-    render();
-    
-    // Sonraki kutuya otomatik geç
+    // Eğer rakam girildiyse sonrakine odaklan
     if (digit && index < 3) {
-        setTimeout(() => {
-            document.getElementById(`code-input-${index + 1}`)?.focus();
-        }, 0);
+        const nextInput = document.getElementById(`code-input-${index + 1}`);
+        if (nextInput) {
+            nextInput.focus();
+        }
     }
 };
 
@@ -1039,27 +1096,44 @@ const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}
     render();
 };
 
-window.removeExpense = async function(dateKey, index) {
-    if(!confirm("Bu harcamayı silmek istediğine emin misin?")) return;
-    state.expenses[dateKey].splice(index, 1);
-    if (state.expenses[dateKey].length === 0) delete state.expenses[dateKey];
-    await saveExpensesToFirebase();
-    showToast('🗑️ Harcama silindi!');
-    render();
+// Harcama Silme (GÜNCELLENDİ)
+window.removeExpense = function(dateKey, index) {
+    // Direkt silmek yerine, güvenlik kontrolüne gönderiyoruz
+    requestSecurityCheck(async () => {
+        // Burası sadece şifre doğruysa çalışacak
+        state.expenses[dateKey].splice(index, 1);
+        if (state.expenses[dateKey].length === 0) delete state.expenses[dateKey];
+        await saveExpensesToFirebase();
+        showToast('🗑️ Harcama güvenli şekilde silindi!');
+        render();
+    });
 };
 
-window.deleteAllData = async () => { if(confirm('Tümü silinsin mi?')) { state.expenses = {}; await saveExpensesToFirebase(); showToast('🗑️ Tüm veriler silindi!'); render(); } };
-window.deleteLastWeek = async () => { 
-    if(!confirm('Son 1 hafta silinsin mi?')) return;
-    const limit = new Date(); limit.setDate(limit.getDate() - 7);
-    filterExpenses(d => d < limit);
-    showToast('🗑️ Son 1 hafta silindi!');
+// Tümünü Silme (GÜNCELLENDİ)
+window.deleteAllData = async () => { 
+    requestSecurityCheck(async () => {
+        state.expenses = {}; 
+        await saveExpensesToFirebase(); 
+        showToast('🗑️ Tüm veriler silindi!'); 
+        render(); 
+    });
 };
+
+// Haftalık/Aylık Silme (GÜNCELLENDİ)
+window.deleteLastWeek = async () => { 
+    requestSecurityCheck(async () => {
+        const limit = new Date(); limit.setDate(limit.getDate() - 7);
+        await filterExpenses(d => d < limit);
+        showToast('🗑️ Son 1 hafta silindi!');
+    });
+};
+
 window.deleteLastMonth = async () => {
-    if(!confirm('Son 1 ay silinsin mi?')) return;
-    const limit = new Date(); limit.setMonth(limit.getMonth() - 1);
-    filterExpenses(d => d < limit);
-    showToast('🗑️ Son 1 ay silindi!');
+    requestSecurityCheck(async () => {
+        const limit = new Date(); limit.setMonth(limit.getMonth() - 1);
+        await filterExpenses(d => d < limit);
+        showToast('🗑️ Son 1 ay silindi!');
+    });
 };
 
 async function filterExpenses(predicate) {
@@ -1171,6 +1245,81 @@ const k = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padSt
     return exps ? exps.reduce((s, e) => s + e.amount, 0) : 0;
 }
 
+// --- GÜVENLİK VE ONAY SİSTEMİ ---
+
+// 1. İşlemi Başlatır (Şifre Ekranını Açar)
+window.requestSecurityCheck = (actionFunction) => {
+    // Google ile giriş yapanlarda şifre olmadığı için direkt soralım
+    const isGoogleUser = auth.currentUser.providerData.some(p => p.providerId === 'google.com');
+    
+    if (isGoogleUser) {
+        if(confirm("Google ile giriş yaptığınız için şifre sorulmuyor. Silmek istediğinize emin misiniz?")) {
+            actionFunction();
+        }
+        return;
+    }
+
+    // Email/Şifre kullanıcıları için modalı aç
+    state.pendingAction = actionFunction;
+    state.showSecurityModal = true;
+    state.securityPassword = '';
+    state.securityError = '';
+    render();
+    
+    // Inputa odaklan
+    setTimeout(() => {
+        const pwdInput = document.getElementById('securityPasswordInput');
+        if(pwdInput) pwdInput.focus();
+    }, 100);
+};
+
+// 2. Şifreyi Doğrular ve İşlemi Yapar
+window.confirmSecurityAction = async () => {
+    if (!state.securityPassword) {
+        state.securityError = 'Lütfen şifrenizi girin';
+        render();
+        return;
+    }
+
+    state.loading = true; // Yükleniyor göster
+    render();
+
+    const user = auth.currentUser;
+    const credential = EmailAuthProvider.credential(user.email, state.securityPassword);
+
+    try {
+        // Firebase'e sor: Bu şifre doğru mu?
+        await reauthenticateWithCredential(user, credential);
+        
+        // Şifre DOĞRU ise:
+        state.showSecurityModal = false;
+        state.loading = false;
+        
+        // Bekleyen silme işlemini çalıştır
+        if (state.pendingAction) {
+            state.pendingAction(); // <--- ASIL SİLME BURADA YAPILIYOR
+            state.pendingAction = null;
+        }
+        
+    } catch (error) {
+        state.loading = false;
+        if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+            state.securityError = '❌ Şifre yanlış!';
+        } else {
+            state.securityError = 'Hata: ' + error.message;
+        }
+        render();
+    }
+};
+
+window.closeSecurityModal = () => {
+    state.showSecurityModal = false;
+    state.securityPassword = '';
+    state.pendingAction = null;
+    state.securityError = '';
+    render();
+};
+
 // --- RENDER ---
 function render() {
     const app = document.getElementById('app');
@@ -1240,7 +1389,7 @@ if (state.loading) {
                                 <div class="text-red-500 font-medium">⏰ Kodun süresi doldu</div>
                             ` : `
                                 <div class="${isDark ? 'text-gray-400' : 'text-gray-500'}">
-                                    Kalan süre: <span data-timer class="font-mono font-bold ${remainingTime < 60 ? 'text-red-500' : 'text-amber-500'}">${timeDisplay}</span>
+                                    Kalan süre: <span data-timer class="font-mono font-bold text-amber-500">${timeDisplay}</span>
                                 </div>
                             `}
                         </div>
@@ -1277,24 +1426,7 @@ if (state.loading) {
                 ${state.toastMessage ? `<div class="toast fixed bottom-6 left-1/2 transform -translate-x-1/2 ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white'} border shadow-2xl rounded-xl px-6 py-3 z-50 flex items-center gap-3"><span class="${isDark ? 'text-gray-200' : 'text-gray-800'} font-medium">${state.toastMessage}</span></div>` : ''}
             `;
             
-            if (!isExpired && state.codeExpiry) {
-                setTimeout(() => {
-                    const now = Date.now();
-                    if (now < state.codeExpiry) {
-                        const remaining = Math.max(0, Math.floor((state.codeExpiry - now) / 1000));
-                        const mins = Math.floor(remaining / 60);
-                        const secs = remaining % 60;
-                        const timerEl = document.querySelector('[data-timer]');
-                        if (timerEl) {
-                            timerEl.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
-                            timerEl.className = remaining < 60 ? 'font-mono font-bold text-red-500' : 'font-mono font-bold text-amber-500';
-                        }
-                        if (state.pendingVerification) setTimeout(arguments.callee, 1000);
-                    } else {
-                        render();
-                    }
-                }, 1000);
-            }
+            
             setTimeout(() => { const firstInput = document.getElementById('code-input-0'); if (firstInput) firstInput.focus(); }, 100);
             return;
         }
@@ -1464,6 +1596,7 @@ if (state.selectedDate) {
     `}).join('');
 
     // YENİ: Kategori kartı render fonksiyonu
+// YENİ: Kategori kartı render fonksiyonu (GÜNCELLENMİŞ VERSİYON)
     const renderCategoryCard = (catKey) => {
         const cat = state.categories[catKey];
         const totals = getCategoryTotals(catKey);
@@ -1476,9 +1609,11 @@ if (state.selectedDate) {
                 <div class="details-enter mt-4 pt-4 border-t border-white/20 space-y-2">
                     ${Object.entries(periods).map(([periodKey, period]) => {
                         const isSelectedPeriod = state.selectedPeriod === periodKey;
-                        const periodData = isSelectedPeriod ? getCategoryPeriodDetails(catKey, periodKey) : null;
                         
-                        // Alt kategori listesi
+                        // BURASI DEĞİŞTİ: Her dönem için verileri her zaman hesapla (seçili olmasa bile)
+                        const periodData = getCategoryPeriodDetails(catKey, periodKey);
+                        
+                        // Alt kategori listesi (Sadece seçiliyse oluşturulur)
                         let subcategoryListHTML = '';
                         if (isSelectedPeriod && periodData) {
                             subcategoryListHTML = `
@@ -1537,6 +1672,7 @@ if (state.selectedDate) {
                             `;
                         }
                         
+                        // BURASI GÜNCELLENDİ: Butonun içinde TL ve Altın gösterimi eklendi
                         return `
                             <div class="overflow-hidden">
                                 <div onclick="selectPeriod(event, '${periodKey}')" class="bg-black/10 rounded-xl p-3 cursor-pointer hover:bg-black/20 transition-all flex justify-between items-center backdrop-blur-sm border border-white/5">
@@ -1545,12 +1681,10 @@ if (state.selectedDate) {
                                         <span class="text-sm font-semibold">${period.name}</span>
                                     </div>
                                     <div class="flex items-center gap-2">
-                                        ${isSelectedPeriod && periodData ? `
-                                            <div class="flex items-center gap-2 mr-1">
-                                                <span class="text-[10px] opacity-60 font-medium tracking-tight">≈${periodData.totalGold.toFixed(4)}g</span>
-                                                <span class="font-bold text-sm">₺${formatTL(periodData.total)}</span>
-                                            </div>
-                                        ` : ''}
+                                        <div class="flex flex-col items-end mr-1">
+                                            <span class="text-sm font-bold">₺${formatTL(periodData.total)}</span>
+                                            <span class="text-[10px] opacity-70 font-medium tracking-tight">≈${periodData.totalGold.toFixed(2)}g</span>
+                                        </div>
                                         <svg class="w-4 h-4 text-white/70 transition-transform ${isSelectedPeriod ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                                     </div>
                                 </div>
@@ -1579,6 +1713,7 @@ if (state.selectedDate) {
             </div>
         `;
     };
+
 
     const nowYear = new Date().getFullYear();
     const yearList = [];
@@ -1619,12 +1754,43 @@ if (state.selectedDate) {
                                 <button onclick="openAnalysis()" class="${navBtnClass}" title="Analiz">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
                                 </button>
-                                <button onclick="toggleExportMenu()" class="${navBtnClass}" title="Dışa Aktar">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                                </button>
-                                <button onclick="toggleDeleteMenu()" class="${navBtnClass} hover:text-red-500" title="Sil">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                                </button>
+                                
+                                <div class="relative">
+                                    <button onclick="toggleExportMenu()" class="${navBtnClass}" title="Dışa Aktar">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                    </button>
+                                    ${state.showExportMenu ? `
+                                        <div class="absolute top-12 right-0 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-xl rounded-xl w-48 py-2 z-50 animate-[dropdownIn_0.2s] export-dropdown">
+                                            <button onclick="exportToExcel()" class="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-amber-50 dark:hover:bg-gray-700 dark:text-gray-300 transition-colors">
+                                                <span>📊</span> Excel İndir
+                                            </button>
+                                            <button onclick="exportToPDF()" class="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-amber-50 dark:hover:bg-gray-700 dark:text-gray-300 transition-colors">
+                                                <span>📄</span> PDF İndir
+                                            </button>
+                                        </div>
+                                    ` : ''}
+                                </div>
+
+                                <div class="relative">
+                                    <button onclick="toggleDeleteMenu()" class="${navBtnClass} hover:text-red-500" title="Sil">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                    </button>
+                                    ${state.showDeleteMenu ? `
+                                        <div class="absolute top-12 right-0 bg-white dark:bg-gray-800 border border-red-100 dark:border-red-900/30 shadow-xl rounded-xl w-56 py-2 z-50 animate-[dropdownIn_0.2s] export-dropdown">
+                                             <button onclick="deleteLastWeek()" class="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 transition-colors">
+                                                <span>📅</span> Son 1 Haftayı Sil
+                                            </button>
+                                            <button onclick="deleteLastMonth()" class="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 transition-colors">
+                                                <span>🗓️</span> Son 1 Ayı Sil
+                                            </button>
+                                            <div class="h-px bg-gray-100 dark:bg-gray-700 my-1"></div>
+                                            <button onclick="deleteAllData()" class="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 font-bold transition-colors">
+                                                <span>🗑️</span> Tüm Verileri Sıfırla
+                                            </button>
+                                        </div>
+                                    ` : ''}
+                                </div>
+
                                 <button onclick="handleLogout()" class="${navBtnClass} hover:text-red-500" title="Çıkış Yap">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -1633,22 +1799,53 @@ if (state.selectedDate) {
                             </div>
 
                             <div class="relative md:hidden">
-                                <button onclick="toggleMobileMenu()" class="${navBtnClass} ${state.showMobileMenu ? 'bg-amber-100 text-amber-600' : ''}">
+                                <button onclick="toggleMobileMenu()" class="${navBtnClass} ${state.showMobileMenu ? 'bg-amber-100 dark:bg-gray-700 text-amber-600 dark:text-amber-400' : ''}">
                                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
                                 </button>
                                 
                                 ${state.showMobileMenu ? `
-                                    <div class="absolute right-0 top-12 ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-amber-100'} border shadow-xl rounded-xl w-48 py-2 z-50 animate-[slideDown_0.2s] flex flex-col gap-1">
+                                    <div class="absolute right-0 top-12 ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-amber-100'} border shadow-xl rounded-xl w-64 py-2 z-50 animate-[slideDown_0.2s] flex flex-col max-h-[80vh] overflow-y-auto">
+                                        
                                         <button onclick="openAnalysis(); toggleMobileMenu()" class="text-left px-4 py-3 flex items-center gap-3 ${isDark ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-amber-50'}">
                                             <span>📊</span> Analiz Et
                                         </button>
-                                        <button onclick="toggleExportMenu(); toggleMobileMenu()" class="text-left px-4 py-3 flex items-center gap-3 ${isDark ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-amber-50'}">
-                                            <span>📥</span> Dışa Aktar
+
+                                        <button onclick="toggleExportMenu()" class="text-left px-4 py-3 flex items-center justify-between gap-3 ${isDark ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-amber-50'} ${state.showExportMenu ? 'bg-gray-50 dark:bg-gray-700/50' : ''}">
+                                            <div class="flex items-center gap-3"><span>📥</span> Dışa Aktar</div>
+                                            <span class="text-xs opacity-50">${state.showExportMenu ? '▲' : '▼'}</span>
                                         </button>
-                                        <button onclick="toggleDeleteMenu(); toggleMobileMenu()" class="text-left px-4 py-3 flex items-center gap-3 text-red-500 hover:bg-red-50">
-                                            <span>🗑️</span> Verileri Sil
+                                        
+                                        ${state.showExportMenu ? `
+                                            <div class="bg-gray-50 dark:bg-black/20 border-y border-gray-100 dark:border-gray-700/50">
+                                                <button onclick="exportToExcel(); toggleMobileMenu()" class="w-full text-left pl-12 pr-4 py-2.5 text-sm flex items-center gap-2 ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-amber-600'}">
+                                                    📄 Excel İndir
+                                                </button>
+                                                <button onclick="exportToPDF(); toggleMobileMenu()" class="w-full text-left pl-12 pr-4 py-2.5 text-sm flex items-center gap-2 ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-amber-600'}">
+                                                    📑 PDF İndir
+                                                </button>
+                                            </div>
+                                        ` : ''}
+
+                                        <button onclick="toggleDeleteMenu()" class="text-left px-4 py-3 flex items-center justify-between gap-3 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 ${state.showDeleteMenu ? 'bg-red-50 dark:bg-red-900/10' : ''}">
+                                            <div class="flex items-center gap-3"><span>🗑️</span> Verileri Sil</div>
+                                            <span class="text-xs opacity-50">${state.showDeleteMenu ? '▲' : '▼'}</span>
                                         </button>
-                                        <button onclick="handleLogout()" class="text-left px-4 py-3 flex items-center gap-3 text-red-500 hover:bg-red-50 font-bold border-t ${isDark ? 'border-gray-700' : 'border-gray-100'} mt-1">
+
+                                        ${state.showDeleteMenu ? `
+                                            <div class="bg-red-50/50 dark:bg-red-900/5 border-y border-red-100 dark:border-red-900/20">
+                                                <button onclick="deleteLastWeek(); toggleMobileMenu()" class="w-full text-left pl-12 pr-4 py-2.5 text-sm flex items-center gap-2 text-red-600 dark:text-red-400 hover:underline">
+                                                    📅 Son 1 Haftayı Sil
+                                                </button>
+                                                <button onclick="deleteLastMonth(); toggleMobileMenu()" class="w-full text-left pl-12 pr-4 py-2.5 text-sm flex items-center gap-2 text-red-600 dark:text-red-400 hover:underline">
+                                                    🗓️ Son 1 Ayı Sil
+                                                </button>
+                                                <button onclick="deleteAllData(); toggleMobileMenu()" class="w-full text-left pl-12 pr-4 py-2.5 text-sm flex items-center gap-2 text-red-700 dark:text-red-300 font-bold hover:underline">
+                                                    ❗ Tümünü Sıfırla
+                                                </button>
+                                            </div>
+                                        ` : ''}
+
+                                        <button onclick="handleLogout()" class="text-left px-4 py-3 flex items-center gap-3 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 font-bold border-t ${isDark ? 'border-gray-700' : 'border-gray-100'} mt-1">
                                             <span>🚪</span> Çıkış Yap
                                         </button>
                                     </div>
@@ -1844,6 +2041,55 @@ ${state.subcategoryEditMode ? `
                 </div>
             </div>
             ` : ''}
+
+${state.showBudgetModal ? `
+            <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-[fadeIn_0.2s]" onclick="if(event.target === this) closeBudgetModal()">
+                <div class="modal-enter ${isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white'} rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden">
+                    
+                    <div class="bg-gradient-to-r from-green-600 to-emerald-600 p-6 text-white relative overflow-hidden">
+                        <div class="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
+                        <h3 class="font-bold text-xl relative z-10">Bütçe Ayarları</h3>
+                        <p class="text-green-100 text-xs mt-1 relative z-10">Aylık hedefini ve döngünü belirle</p>
+                    </div>
+
+                    <div class="p-6 space-y-5">
+                        
+                        <div>
+                            <label class="text-xs font-bold ${isDark ? 'text-gray-400' : 'text-gray-500'} ml-1 mb-1 block uppercase tracking-wide">Aylık Hedef (TL)</label>
+                            <div class="relative">
+                                <span class="absolute left-4 top-3.5 text-gray-400">₺</span>
+                                <input type="number" id="budgetAmountInput"
+                                    class="w-full pl-10 pr-4 py-3 rounded-xl border-2 ${isDark ? 'bg-gray-700 border-gray-600 text-white focus:border-green-500' : 'bg-gray-50 border-gray-200 focus:border-green-500'} outline-none transition-all font-bold text-lg" 
+                                    placeholder="Örn: 20000">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="text-xs font-bold ${isDark ? 'text-gray-400' : 'text-gray-500'} ml-1 mb-1 block uppercase tracking-wide">Bütçe Yenilenme Günü</label>
+                            <div class="relative">
+                                <span class="absolute left-4 top-3.5 text-gray-400">📅</span>
+                                <input type="number" id="budgetDayInput" min="1" max="31"
+                                    class="w-full pl-10 pr-4 py-3 rounded-xl border-2 ${isDark ? 'bg-gray-700 border-gray-600 text-white focus:border-green-500' : 'bg-gray-50 border-gray-200 focus:border-green-500'} outline-none transition-all font-bold" 
+                                    placeholder="Örn: 1 (Her ayın 1'i)">
+                                <div class="text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'} mt-1 ml-1">Maaş gününü veya ay başını (1) seçebilirsin.</div>
+                            </div>
+                        </div>
+
+                        <div class="flex gap-3 pt-2">
+                            <button onclick="closeBudgetModal()" class="flex-1 py-3 rounded-xl font-bold ${isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'} transition-colors">
+                                Vazgeç
+                            </button>
+                            <button onclick="saveBudgetSettings()" class="flex-[2] py-3 rounded-xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg hover:scale-[1.02] transition-all flex justify-center items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                Kaydet
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+            ` : ''}
+
 
             ${state.showYearSelector ? `
             <div class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onclick="if(event.target === this) toggleYearSelector()">
@@ -2105,6 +2351,52 @@ ${state.subcategoryEditMode ? `
                 </div>
             </div>
             ` : ''}
+            ${state.showSecurityModal ? `
+            <div class="fixed inset-0 bg-black/80 backdrop-blur-md z-[60] flex items-center justify-center p-4 animate-[fadeIn_0.2s]">
+                <div class="modal-enter ${isDark ? 'bg-gray-800 border border-red-900/50' : 'bg-white'} rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden text-center relative">
+                    
+                    <div class="bg-gradient-to-r from-red-600 to-rose-700 p-6 text-white relative overflow-hidden">
+                        <div class="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
+                        <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3 backdrop-blur-sm shadow-inner">
+                            <span class="text-3xl">🔒</span>
+                        </div>
+                        <h3 class="font-bold text-xl relative z-10">Güvenlik Kontrolü</h3>
+                        <p class="text-red-100 text-xs mt-1 relative z-10">Bu işlem geri alınamaz!</p>
+                    </div>
+
+                    <div class="p-6 space-y-5">
+                        <p class="text-sm ${isDark ? 'text-gray-300' : 'text-gray-600'} font-medium">
+                            Devam etmek için lütfen hesap şifrenizi girin.
+                        </p>
+                        
+                        <div class="relative">
+                            <input type="password" 
+                                id="securityPasswordInput"
+                                value="${state.securityPassword}"
+                                oninput="state.securityPassword = this.value"
+                                onkeydown="if(event.key === 'Enter') confirmSecurityAction()"
+                                class="w-full px-4 py-3 rounded-xl border-2 text-center text-lg tracking-widest ${isDark ? 'bg-gray-700 border-gray-600 text-white focus:border-red-500' : 'bg-gray-50 border-gray-200 focus:border-red-500'} outline-none transition-all" 
+                                placeholder="••••••">
+                        </div>
+
+                        ${state.securityError ? `
+                            <div class="text-red-500 text-sm font-bold bg-red-100/10 py-2 rounded-lg animate-pulse">
+                                ${state.securityError}
+                            </div>
+                        ` : ''}
+
+                        <div class="flex gap-3 pt-2">
+                            <button onclick="closeSecurityModal()" class="flex-1 py-3 rounded-xl font-bold ${isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'} transition-colors">
+                                İptal
+                            </button>
+                            <button onclick="confirmSecurityAction()" class="flex-[2] py-3 rounded-xl font-bold bg-gradient-to-r from-red-600 to-rose-600 text-white hover:shadow-lg hover:scale-[1.02] transition-all flex justify-center items-center gap-2">
+                                ${state.loading ? '<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>' : '🗑️ Onayla ve Sil'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            ` : ''}
     `;
 
     if (state.showModal) {
@@ -2122,13 +2414,42 @@ ${state.subcategoryEditMode ? `
        
 }
 
+// --- TIKLAMA İLE MENÜLERİ KAPATMA (BOŞLUĞA TIKLAYINCA) ---
 document.addEventListener('click', function(e) {
-    if (state.showDeleteMenu && !e.target.closest('[onclick="toggleDeleteMenu()"]')) {
-        state.showDeleteMenu = false;
-        render();
+    let needsRender = false;
+
+    // 1. MOBİL MENÜ KONTROLÜ
+    // Eğer menü açıksa VE tıklanan yer mobil menü kapsayıcısının (ikon veya menü) içi değilse
+    if (state.showMobileMenu) {
+        if (!e.target.closest('.relative.md\\:hidden')) {
+            state.showMobileMenu = false;
+            // Mobil menü kapanınca alt menüleri de kapatalım ki temiz olsun
+            state.showExportMenu = false;
+            state.showDeleteMenu = false;
+            needsRender = true;
+        }
     }
-    if (state.showExportMenu && !e.target.closest('[onclick="toggleExportMenu()"]')) {
-        state.showExportMenu = false;
+
+    // 2. DIŞA AKTAR MENÜSÜ (Masaüstü)
+    // Mobildeyken bu kontrolü yapma çünkü mobilde menü içinde menü var, karışmasın
+    if (state.showExportMenu && !state.showMobileMenu) {
+        // Tıklanan yer butonu veya menünün kendisi değilse kapat
+        if (!e.target.closest('[onclick="toggleExportMenu()"]') && !e.target.closest('.export-dropdown')) {
+            state.showExportMenu = false;
+            needsRender = true;
+        }
+    }
+
+    // 3. SİLME MENÜSÜ (Masaüstü)
+    if (state.showDeleteMenu && !state.showMobileMenu) {
+        if (!e.target.closest('[onclick="toggleDeleteMenu()"]') && !e.target.closest('.export-dropdown')) {
+            state.showDeleteMenu = false;
+            needsRender = true;
+        }
+    }
+
+    // Eğer herhangi bir değişiklik olduysa ekranı yenile
+    if (needsRender) {
         render();
     }
 });
@@ -2240,31 +2561,46 @@ async function checkAndFixFutureExpenses() {
     }
 }
 
-// YENİ: Bütçe ve Maaş Günü Belirleme
-window.setMonthlyBudget = async () => {
-    const currentLimit = state.monthlyBudget || 0;
-    const currentDay = state.budgetStartDay || 1;
+// --- YENİ BÜTÇE DÜZENLEME SİSTEMİ ---
 
-    // 1. Soru: Bütçe Miktarı
-    const amountInput = prompt("Bu dönem için harcama hedefin (TL) nedir?", currentLimit);
-    if (amountInput === null) return; // İptal etti
+// 1. Pencereyi Açar
+window.openBudgetModal = () => {
+    state.showBudgetModal = true;
+    render();
+    
+    // Pencere açılınca mevcut değerleri kutucuklara yazalım
+    setTimeout(() => {
+        const amountInput = document.getElementById('budgetAmountInput');
+        const dayInput = document.getElementById('budgetDayInput');
+        if (amountInput) amountInput.value = state.monthlyBudget || 0;
+        if (dayInput) dayInput.value = state.budgetStartDay || 1;
+    }, 50);
+};
 
-    // 2. Soru: Başlangıç Günü
-    const dayInput = prompt("Bütçe döngüsü ayın kaçında başlasın? (Örn: Maaş günü için 15)", currentDay);
-    if (dayInput === null) return; // İptal etti
+// 2. Pencereyi Kapatır
+window.closeBudgetModal = () => {
+    state.showBudgetModal = false;
+    render();
+};
 
-    const amount = parseFloat(amountInput);
-    const day = parseInt(dayInput);
+// 3. Verileri Kaydeder (Eski prompt yerine burası çalışacak)
+window.saveBudgetSettings = async () => {
+    const amountVal = document.getElementById('budgetAmountInput').value;
+    const dayVal = document.getElementById('budgetDayInput').value;
+
+    const amount = parseFloat(amountVal);
+    const day = parseInt(dayVal);
 
     if (!isNaN(amount) && amount >= 0 && !isNaN(day) && day > 0 && day <= 31) {
         state.monthlyBudget = amount;
-        state.budgetStartDay = day; // Günü kaydet
+        state.budgetStartDay = day; 
         
-        await saveExpensesToFirebase();
-        render();
-        showToast(`✅ Bütçe ayarlandı! (Döngü: Ayın ${day}'i)`);
+        state.showBudgetModal = false; // Pencereyi kapat
+        await saveExpensesToFirebase(); // Kaydet
+        render(); // Ekranı yenile
+        showToast(`✅ Bütçe güncellendi! (Hedef: ₺${formatTL(amount)})`);
     } else {
-        showToast('⚠️ Geçersiz değer girdiniz.');
+        showToast('⚠️ Geçersiz değer girdiniz. Lütfen kontrol edin.');
     }
 };
 
