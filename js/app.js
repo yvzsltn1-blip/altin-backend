@@ -120,6 +120,8 @@ let state = {
     analysisSearchText: ''
 };
 
+window.state = state;  // <--- BU SATIRI EKLE VE KAYDET!
+
 const monthNames = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
 const dayNames = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 
@@ -449,8 +451,11 @@ window.handleGoogleLogin = async () => {
         await loadExpensesFromFirebase();
         render();
     } catch (error) {
+        console.error("Google Login Detayı:", error);
+        
         if (error.code !== 'auth/popup-closed-by-user') {
-            state.loginError = 'Google girişi başarısız';
+            // Hatanın İngilizce sebebini direkt ekrana yaz
+            state.loginError = 'Hata: ' + error.message; 
             render();
         }
     }
@@ -1248,63 +1253,89 @@ const k = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padSt
 // --- GÜVENLİK VE ONAY SİSTEMİ ---
 
 // 1. İşlemi Başlatır (Şifre Ekranını Açar)
+// GÜVENLİK KONTROLÜ BAŞLATMA
 window.requestSecurityCheck = (actionFunction) => {
-    // Google ile giriş yapanlarda şifre olmadığı için direkt soralım
-    const isGoogleUser = auth.currentUser.providerData.some(p => p.providerId === 'google.com');
-    
-    if (isGoogleUser) {
-        if(confirm("Google ile giriş yaptığınız için şifre sorulmuyor. Silmek istediğinize emin misiniz?")) {
-            actionFunction();
-        }
-        return;
-    }
+    const user = auth.currentUser;
+    if (!user) return;
 
-    // Email/Şifre kullanıcıları için modalı aç
+    // İşlemi hafızaya al (Silme işlemi vs.)
     state.pendingAction = actionFunction;
-    state.showSecurityModal = true;
-    state.securityPassword = '';
-    state.securityError = '';
-    render();
-    
-    // Inputa odaklan
-    setTimeout(() => {
-        const pwdInput = document.getElementById('securityPasswordInput');
-        if(pwdInput) pwdInput.focus();
-    }, 100);
+
+    // 1. Kullanıcı Google ile mi giriş yapmış kontrol et
+    const isGoogleUser = user.providerData.some(provider => provider.providerId === 'google.com');
+
+    if (isGoogleUser) {
+        // --- GOOGLE KULLANICISI ---
+        // Şifresi olmadığı için direkt kırmızı "Son Karar" ekranını açıyoruz
+        state.showFinalConfirmation = true;
+        render();
+    } else {
+        // --- NORMAL KULLANICI ---
+        // Şifre sorma ekranını açıyoruz
+        state.showSecurityModal = true;
+        state.securityPassword = '';
+        state.securityError = '';
+        render();
+        
+        // Inputa odaklan
+        setTimeout(() => {
+            const pwdInput = document.getElementById('securityPasswordInput');
+            if(pwdInput) pwdInput.focus();
+        }, 100);
+    }
 };
 
 // 2. Şifreyi Doğrular ve İşlemi Yapar
 window.confirmSecurityAction = async () => {
+    // 1. Şifre girilmiş mi?
     if (!state.securityPassword) {
         state.securityError = 'Lütfen şifrenizi girin';
         render();
         return;
     }
 
-    state.loading = true; // Yükleniyor göster
+    // 2. Yükleniyor...
+    state.loading = true;
     render();
 
     const user = auth.currentUser;
-    const credential = EmailAuthProvider.credential(user.email, state.securityPassword);
 
     try {
-        // Firebase'e sor: Bu şifre doğru mu?
+        // 3. Firebase'e şifreyi doğrulat
+        const credential = EmailAuthProvider.credential(user.email, state.securityPassword);
         await reauthenticateWithCredential(user, credential);
         
-        // Şifre DOĞRU ise:
+        // 4. Şifre doğru! Yapılacak işlemi hafızaya al
+        const actionToRun = state.pendingAction;
+
+        // 5. Pencereyi kapat ve temizle
+        state.pendingAction = null;
         state.showSecurityModal = false;
+        state.securityPassword = '';
         state.loading = false;
-        
-        // Bekleyen silme işlemini çalıştır
-        if (state.pendingAction) {
-            state.pendingAction(); // <--- ASIL SİLME BURADA YAPILIYOR
-            state.pendingAction = null;
+        state.securityError = '';
+
+        // 6. Ekranı yenile (Şifre ekranı kaybolsun)
+        render();
+
+        // 7. SON KONTROL VE İŞLEM
+        if (actionToRun) {
+            setTimeout(async () => {
+                // KULLANICIYA SON KEZ SORUYORUZ:
+                if(confirm("⚠️ Bu işlem geri alınamaz! Gerçekten devam etmek istiyor musunuz?")) {
+                    await actionToRun(); // "Tamam" derse siler
+                } else {
+                    showToast('❌ İşlem iptal edildi.'); // "İptal" derse vazgeçer
+                }
+            }, 50);
         }
-        
+
     } catch (error) {
         state.loading = false;
         if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
             state.securityError = '❌ Şifre yanlış!';
+        } else if (error.code === 'auth/too-many-requests') {
+            state.securityError = '⚠️ Çok fazla deneme yaptınız. Biraz bekleyin.';
         } else {
             state.securityError = 'Hata: ' + error.message;
         }
@@ -1488,8 +1519,27 @@ if (state.loading) {
                     </div>
                 </div>
             </div>`;
-        document.getElementById('email')?.addEventListener('input', e => state.loginForm.email = e.target.value);
-        document.getElementById('password')?.addEventListener('input', e => state.loginForm.password = e.target.value);
+        // Input elementlerini seç
+        const emailInput = document.getElementById('email');
+        const passInput = document.getElementById('password');
+
+        if (emailInput && passInput) {
+            // Yazılanları state'e kaydet (Eski kodun yaptığı iş)
+            emailInput.addEventListener('input', e => state.loginForm.email = e.target.value);
+            passInput.addEventListener('input', e => state.loginForm.password = e.target.value);
+
+            // --- YENİ: ENTER TUŞU İLE GİRİŞ ---
+            const triggerSubmit = (e) => {
+                if (e.key === 'Enter') {
+                    // Kayıt modundaysa Kayıt Ol, değilse Giriş Yap fonksiyonunu çağır
+                    state.isRegistering ? window.handleRegister() : window.handleLogin();
+                }
+            };
+
+            // Her iki kutucuğa da bu özelliği ekle
+            emailInput.addEventListener('keydown', triggerSubmit);
+            passInput.addEventListener('keydown', triggerSubmit);
+        }
         return;
     }
 
