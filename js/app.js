@@ -16,6 +16,10 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, deleteDoc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+const ADMIN_UIDS = [
+    "eq3Gz056elTc4uv8nT7LjbcSF7I3", 
+    "zH4fSotT2wONTpjEmLuhEyB1QeU2" 
+];
 // EmailJS Yapılandırması
 const EMAILJS_PUBLIC_KEY = "69evAT7YVkcEVLN4E";
 const EMAILJS_SERVICE_ID = "service_unomeqi";  
@@ -471,18 +475,17 @@ window.toggleDarkMode = () => {
 };
 
 // --- FIREBASE DATA ---
-// --- YENİ KAYIT SİSTEMİ ---
-// --- GÜNCELLENMİŞ KAYIT SİSTEMİ (Bütçe Dahil) ---
 async function saveExpensesToFirebase() {
     if (!state.currentUser) return;
     try {
         await setDoc(doc(db, "users", state.currentUser.uid), { 
+            email: state.currentUser.email, // <--- BU SATIRI EKLE (Artık email veritabanında saklanacak)
             expenses: state.expenses, 
             categories: state.categories, 
             monthlyBudget: state.monthlyBudget || 0,
-            budgetStartDay: state.budgetStartDay || 1, // <--- YENİ: Kaydet
+            budgetStartDay: state.budgetStartDay || 1, 
             updatedAt: new Date().toISOString() 
-        });
+        }, { merge: true }); // <--- merge: true EKLERSEN DAHA GÜVENLİ OLUR
     } catch (e) { console.error('Hata:', e); }
 }
 
@@ -1803,12 +1806,20 @@ if (state.selectedDate) {
                         </div>
 
                         <div class="flex items-center gap-2">
+
+                        
                             
                             <div class="hidden md:flex items-center gap-2">
                                 <button onclick="openAnalysis()" class="${navBtnClass}" title="Analiz">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
                                 </button>
                                 
+                                ${state.currentUser && typeof ADMIN_UIDS !== 'undefined' && ADMIN_UIDS.includes(state.currentUser.uid) ? `
+                                <a href="admin.html" class="${navBtnClass} text-amber-600 bg-amber-100 hover:bg-amber-200" title="Admin Paneli">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+                                </a>
+                                ` : ''}
+
                                 <div class="relative">
                                     <button onclick="toggleExportMenu()" class="${navBtnClass}" title="Dışa Aktar">
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
@@ -1859,7 +1870,11 @@ if (state.selectedDate) {
                                 
                                 ${state.showMobileMenu ? `
                                     <div class="absolute right-0 top-12 ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-amber-100'} border shadow-xl rounded-xl w-64 py-2 z-50 animate-[slideDown_0.2s] flex flex-col max-h-[80vh] overflow-y-auto">
-                                        
+                                        ${state.currentUser && typeof ADMIN_UIDS !== 'undefined' && ADMIN_UIDS.includes(state.currentUser.uid) ? `
+                                    <a href="admin.html" class="text-left px-4 py-3 flex items-center gap-3 text-amber-600 dark:text-amber-400 bg-amber-50/50 dark:bg-gray-700/30 font-bold border-b border-amber-100 dark:border-gray-700 hover:bg-amber-100 dark:hover:bg-gray-600 transition-colors">
+                                        <span>⚜️</span> Admin Paneli
+                                    </a>
+                                ` : ''}
                                         <button onclick="openAnalysis(); toggleMobileMenu()" class="text-left px-4 py-3 flex items-center gap-3 ${isDark ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-amber-50'}">
                                             <span>📊</span> Analiz Et
                                         </button>

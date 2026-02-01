@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YSS Admin Paneli</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Outfit', sans-serif; }</style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div id="loading-screen" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 text-white">
+        <div class="text-center">
+            <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-amber-500 mx-auto mb-4"></div>
+            <p>Admin yetkisi doğrulanıyor...</p>
+        </div>
+    </div>
+
+    <div id="admin-panel" class="hidden min-h-screen flex flex-col md:flex-row">
+        
+        <aside class="w-full md:w-64 bg-gray-900 text-white flex-shrink-0 flex flex-col">
+            <div class="p-6 text-center border-b border-gray-800">
+                <span class="text-2xl font-bold text-amber-500">⚜️ YSS Admin</span>
+            </div>
+            <nav class="flex-1 p-4 space-y-2">
+                <button onclick="showSection('users')" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-gray-800 text-amber-500 font-medium">
+                    <span>👥</span> Kullanıcı Yönetimi
+                </button>
+                <div class="mt-auto pt-10">
+                    <a href="index.html" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-gray-800 text-gray-400 transition-colors">
+                        <span>←</span> Siteye Dön
+                    </a>
+                </div>
+            </nav>
+        </aside>
+
+        <main class="flex-1 overflow-y-auto h-screen">
+            <header class="bg-white shadow-sm p-4 flex justify-between items-center sticky top-0 z-30">
+                <h2 class="text-xl font-bold text-gray-800">Kullanıcı Listesi</h2>
+                <div class="flex items-center gap-4">
+                    <span id="admin-email" class="text-sm font-medium text-gray-500 hidden md:inline"></span>
+                    <button onclick="logout()" class="text-sm text-red-600 hover:underline">Çıkış</button>
+                </div>
+            </header>
+
+            <div class="p-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                        <div class="text-gray-500 text-xs uppercase">Toplam Kullanıcı</div>
+                        <div class="text-2xl font-bold" id="stat-users">-</div>
+                    </div>
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                        <div class="text-gray-500 text-xs uppercase">Toplam Hacim</div>
+                        <div class="text-2xl font-bold text-amber-600" id="stat-volume">-</div>
+                    </div>
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                        <div class="text-gray-500 text-xs uppercase">Bu Ay Aktif</div>
+                        <div class="text-2xl font-bold text-green-600" id="stat-active">-</div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-t-xl border border-gray-200 border-b-0 flex flex-col md:flex-row gap-4 justify-between items-center">
+                    <div class="relative w-full md:w-96">
+                        <span class="absolute left-3 top-2.5 text-gray-400">🔍</span>
+                        <input type="text" id="search-input" oninput="filterUsers(this.value)" placeholder="Email veya ID ara..." class="w-full pl-10 pr-4 py-2 border rounded-lg text-sm focus:border-amber-500 outline-none">
+                    </div>
+                    <button onclick="fetchAllUsers()" class="text-sm bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg transition-colors">🔄 Yenile</button>
+                </div>
+
+                <div class="bg-white rounded-b-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="bg-gray-50 text-gray-600 font-medium border-b">
+                                <tr>
+                                    <th class="px-6 py-3">Kullanıcı (Email / ID)</th>
+                                    <th class="px-6 py-3">Son İşlem</th>
+                                    <th class="px-6 py-3">Bütçe / Harcama</th>
+                                    <th class="px-6 py-3">Dağılım (Z/O/K)</th>
+                                    <th class="px-6 py-3 text-right">İşlemler</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-table-body" class="divide-y">
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="user-detail-modal" class="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl animate-[modalIn_0.3s]">
+            <div class="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-2xl">
+                <h3 class="font-bold text-lg">Detaylı İnceleme</h3>
+                <button onclick="closeModal()" class="text-gray-500 hover:text-red-500 text-2xl">&times;</button>
+            </div>
+            <div class="p-6 overflow-y-auto" id="modal-content"></div>
+        </div>
+    </div>
+
+    <script type="module" src="js/admin.js"></script>
+</body>
+</html>
