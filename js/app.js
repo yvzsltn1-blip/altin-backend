@@ -1103,7 +1103,7 @@ const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}
 
 // TEKİL SİLME (Şifresiz, sadece onay sorar)
 window.removeExpense = async function(dateKey, index) {
-    // 1. Kullanıcıya basitçe sor
+    // 1. Kullanıcıya basitçe sor (Şifre yok!)
     if(confirm("Bu harcamayı silmek istediğine emin misin?")) {
         // 2. Silme işlemini hemen yap
         state.expenses[dateKey].splice(index, 1);
@@ -2451,7 +2451,38 @@ ${state.showBudgetModal ? `
                 </div>
             </div>
             ` : ''}
+            ${state.showFinalConfirmation ? `
+            <div class="fixed inset-0 bg-black/80 backdrop-blur-md z-[70] flex items-center justify-center p-4 animate-[fadeIn_0.2s]">
+                <div class="modal-enter ${isDark ? 'bg-gray-800 border border-red-900/50' : 'bg-white'} rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden text-center relative">
+                    
+                    <div class="bg-gradient-to-r from-red-600 to-rose-700 p-6 text-white relative overflow-hidden">
+                        <div class="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
+                        <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3 backdrop-blur-sm shadow-inner animate-pulse">
+                            <span class="text-3xl">⚠️</span>
+                        </div>
+                        <h3 class="font-bold text-xl relative z-10">Son Kararınız Mı?</h3>
+                    </div>
+
+                    <div class="p-6 space-y-4">
+                        <div class="${isDark ? 'bg-red-900/20 text-red-200' : 'bg-red-50 text-red-800'} p-4 rounded-xl text-sm font-medium border ${isDark ? 'border-red-900/30' : 'border-red-100'}">
+                            Bu işlem <strong>GERİ ALINAMAZ</strong>. Veriler kalıcı olarak silinecektir.
+                        </div>
+                        
+                        <div class="flex gap-3 pt-2">
+                            <button onclick="cancelFinalAction()" class="flex-1 py-3 rounded-xl font-bold ${isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'} transition-colors">
+                                Vazgeç
+                            </button>
+                            <button onclick="executeFinalAction()" class="flex-[2] py-3 rounded-xl font-bold bg-gradient-to-r from-red-600 to-rose-600 text-white hover:shadow-lg hover:scale-[1.05] transition-all shadow-red-500/30">
+                                Evet, Sil
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            ` : ''}
     `;
+
+    
 
     if (state.showModal) {
         setTimeout(() => {
@@ -2753,9 +2784,10 @@ render();
 
 // --- SON ONAY PENCERESİ İÇİN GEREKLİ BUTONLAR ---
 
-// 1. "EVET, SİL" Butonuna Basınca Bu Çalışır
+// --- SON ONAY PENCERESİ İÇİN GEREKLİ BUTONLAR ---
+
+// "EVET, SİL" Butonuna Basınca Bu Çalışır
 window.executeFinalAction = async () => {
-    // Yükleniyor...
     state.loading = true; 
     state.showFinalConfirmation = false; // Pencereyi kapat
     render();
@@ -2775,7 +2807,7 @@ window.executeFinalAction = async () => {
     render();
 };
 
-// 2. "VAZGEÇ" Butonuna Basınca Bu Çalışır
+// "VAZGEÇ" Butonuna Basınca Bu Çalışır
 window.cancelFinalAction = () => {
     state.showFinalConfirmation = false; // Pencereyi kapat
     state.pendingAction = null; // İşlemi iptal et
