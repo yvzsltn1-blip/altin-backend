@@ -1101,17 +1101,21 @@ const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}
     render();
 };
 
-// Harcama Silme (GÜNCELLENDİ)
-window.removeExpense = function(dateKey, index) {
-    // Direkt silmek yerine, güvenlik kontrolüne gönderiyoruz
-    requestSecurityCheck(async () => {
-        // Burası sadece şifre doğruysa çalışacak
+// TEKİL SİLME (Şifresiz, sadece onay sorar)
+window.removeExpense = async function(dateKey, index) {
+    // 1. Kullanıcıya basitçe sor
+    if(confirm("Bu harcamayı silmek istediğine emin misin?")) {
+        // 2. Silme işlemini hemen yap
         state.expenses[dateKey].splice(index, 1);
+        
+        // Eğer o günün harcaması kalmadıysa tarihi de temizle
         if (state.expenses[dateKey].length === 0) delete state.expenses[dateKey];
+        
+        // 3. Kaydet ve Ekranı Yenile
         await saveExpensesToFirebase();
-        showToast('🗑️ Harcama güvenli şekilde silindi!');
+        showToast('🗑️ Harcama silindi!');
         render();
-    });
+    }
 };
 
 // Tümünü Silme (GÜNCELLENDİ)
@@ -2746,3 +2750,35 @@ window.toggleMobileMenu = () => {
 };
 
 render();
+
+// --- SON ONAY PENCERESİ İÇİN GEREKLİ BUTONLAR ---
+
+// 1. "EVET, SİL" Butonuna Basınca Bu Çalışır
+window.executeFinalAction = async () => {
+    // Yükleniyor...
+    state.loading = true; 
+    state.showFinalConfirmation = false; // Pencereyi kapat
+    render();
+
+    // Bekleyen işlemi (silmeyi) yap
+    if (state.pendingAction) {
+        try {
+            await state.pendingAction();
+            state.pendingAction = null; // İşlemi temizle
+        } catch (e) {
+            console.error(e);
+            showToast('❌ İşlem sırasında hata oluştu.');
+        }
+    }
+    
+    state.loading = false;
+    render();
+};
+
+// 2. "VAZGEÇ" Butonuna Basınca Bu Çalışır
+window.cancelFinalAction = () => {
+    state.showFinalConfirmation = false; // Pencereyi kapat
+    state.pendingAction = null; // İşlemi iptal et
+    showToast('ℹ️ İşlemden vazgeçildi.');
+    render();
+};
