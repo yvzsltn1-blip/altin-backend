@@ -1,5 +1,5 @@
 import { state } from './state.js';
-import { saveExpensesToFirebase } from './firebase-data.js';
+import { saveBudgetToFirebase } from './firebase-data.js';
 import { showToast } from './toast.js';
 import { formatTL } from './helpers.js';
 
@@ -32,7 +32,7 @@ window.saveBudgetSettings = async () => {
         state.budgetStartDay = day;
 
         state.showBudgetModal = false;
-        await saveExpensesToFirebase();
+        await saveBudgetToFirebase();
         window.render();
         showToast(`✅ Bütçe güncellendi! (Hedef: ₺${formatTL(amount)})`);
     } else {

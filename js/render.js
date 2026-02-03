@@ -4,6 +4,12 @@ import { formatTL, getDaysInMonth, getTotalForDay, getCategoryTotals, getCategor
 import { getFilteredExpenses, calculateAnalysisStats } from './analysis.js';
 import { getBudgetHTML } from './budget.js';
 
+function guvenliYazi(yazi) {
+    let div = document.createElement('div');
+    div.textContent = yazi;
+    return div.innerHTML;
+}
+
 function render() {
     const app = document.getElementById('app');
     const isDark = state.darkMode;
@@ -137,20 +143,20 @@ function render() {
                         <input type="password" id="password" value="${state.loginForm.password}" class="w-full px-4 py-3 rounded-xl border-2 ${isDark ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-amber-100'} focus:border-amber-400 outline-none" placeholder="Şifre">
                         ${state.loginError ? `<div class="text-red-500 text-sm">${state.loginError}</div>` : ''}
 
-                        ${state.isRegistering ? `
-                            <div class="${isDark ? 'bg-amber-900/30 border-amber-700' : 'bg-amber-50 border-amber-100'} border rounded-xl p-3 text-sm ${isDark ? 'text-amber-300' : 'text-amber-700'}">
-                                <div class="flex items-start gap-2">
-                                    <span>🔐</span>
-                                    <div><strong>4 Haneli Kod Doğrulama:</strong><br>Kayıt sonrası email adresinize 4 haneli doğrulama kodu gönderilecek. 3 dakika içinde girmeniz gerekiyor.</div>
-                                </div>
+                       ${state.isRegistering ? `
+                        <div class="${isDark ? 'bg-amber-900/30 border-amber-700' : 'bg-amber-50 border-amber-100'} border rounded-xl p-3 text-sm ${isDark ? 'text-amber-300' : 'text-amber-700'}">
+                            <div class="flex items-start gap-2">
+                                <span>🔐</span>
+                                <div><strong>E-posta Aktivasyonu:</strong><br>Kayıt olduktan sonra e-postanıza bir doğrulama linki gönderilecek. Giriş yapabilmek için önce bu linke tıklamanız gerekmektedir.</div>
                             </div>
-                            <div class="${isDark ? 'bg-yellow-900/30 border-yellow-700' : 'bg-yellow-50 border-yellow-200'} border rounded-xl p-3 text-sm">
-                                <div class="flex items-start gap-2">
-                                    <span>⚠️</span>
-                                    <div class="${isDark ? 'text-yellow-300' : 'text-yellow-700'}"><strong>Önemli:</strong> Doğrulama kodu <strong>Spam/Gereksiz</strong> klasörüne düşebilir.</div>
-                                </div>
+                        </div>
+                        <div class="${isDark ? 'bg-yellow-900/30 border-yellow-700' : 'bg-yellow-50 border-yellow-200'} border rounded-xl p-3 text-sm">
+                            <div class="flex items-start gap-2">
+                                <span>⚠️</span>
+                                <div class="${isDark ? 'text-yellow-300' : 'text-yellow-700'}"><strong>Önemli:</strong> Doğrulama e-postası <strong>Spam/Gereksiz</strong> klasörüne düşebilir. Lütfen kontrol edin.</div>
                             </div>
-                        ` : ''}
+                        </div>
+                    ` : ''}
 
                         <button onclick="${state.isRegistering ? 'handleRegister()' : 'handleLogin()'}" class="w-full py-3 bg-gradient-to-r from-amber-500 to-yellow-500 text-white rounded-xl font-bold hover:shadow-lg transition-all">
                             ${state.isRegistering ? 'Kayıt Ol' : 'Giriş Yap'}
@@ -276,7 +282,7 @@ function render() {
                     </button>
                 </div>
             </div>
-            ${exp.note ? `<div id="${uniqueId}" class="hidden mt-2 pt-2 ${isDark ? 'border-gray-600 text-gray-300' : 'border-amber-200/50 text-amber-800'} border-t text-sm italic animate-[slideDown_0.2s]">📝 ${exp.note}</div>` : ''}
+            ${exp.note ? `<div id="${uniqueId}" class="hidden mt-2 pt-2 ${isDark ? 'border-gray-600 text-gray-300' : 'border-amber-200/50 text-amber-800'} border-t text-sm italic animate-[slideDown_0.2s]">📝 ${guvenliYazi(exp.note)}</div>` : ''}
         </div>
     `}).join('');
 
@@ -319,7 +325,7 @@ function render() {
                                                                             <div class="flex justify-between text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'} mt-1">
                                                                                 <span>${item.goldGrams ? item.goldGrams + 'g altın' : ''}</span>
                                                                             </div>
-                                                                            ${item.note ? `<div id="${noteId}" class="hidden mt-2 pt-2 ${isDark ? 'border-gray-700 text-gray-400' : 'border-gray-100 text-gray-600'} border-t text-xs italic">📝 ${item.note}</div>` : ''}
+                                                                            ${item.note ? `<div id="${noteId}" class="hidden mt-2 pt-2 ${isDark ? 'border-gray-700 text-gray-400' : 'border-gray-100 text-gray-600'} border-t text-xs italic">📝 ${guvenliYazi(item.note)}</div>` : ''}
                                                                         </div>
                                                                     `;
                                                                 }).join('')}
@@ -930,7 +936,7 @@ ${state.showBudgetModal ? `
                                                         ${exp.goldGrams ? `<div class="text-[10px] ${isDark ? 'text-amber-400' : 'text-amber-500'}">≈ ${exp.goldGrams}g altın</div>` : ''}
                                                     </div>
                                                 </div>
-                                                ${exp.note ? `<div id="${noteId}" class="hidden mt-2 pt-2 ${isDark ? 'border-gray-600 text-gray-400' : 'border-gray-200 text-gray-600'} border-t text-sm italic">📝 ${exp.note}</div>` : ''}
+                                                ${exp.note ? `<div id="${noteId}" class="hidden mt-2 pt-2 ${isDark ? 'border-gray-600 text-gray-400' : 'border-gray-200 text-gray-600'} border-t text-sm italic">📝 ${guvenliYazi(exp.note)}</div>` : ''}
                                             </div>
                                         `;
                                     }).join('') : `<div class="text-center py-8 ${isDark ? 'text-gray-500' : 'text-gray-400'}">Bu filtrelere uygun harcama bulunamadı</div>`}

@@ -1,45 +1,43 @@
 import {
-    auth, db, googleProvider, doc, getDoc, setDoc,
-    signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
-    onAuthStateChanged, signInWithPopup,
-    EMAILJS_PUBLIC_KEY, EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID
+    auth, googleProvider, ADMIN_UIDS, // <-- BURAYA ADMIN_UIDS EKLENDİ
+    signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification, signOut,
+    onAuthStateChanged, signInWithPopup
 } from './config.js';
 import { state } from './state.js';
 import { loadExpensesFromFirebase } from './firebase-data.js';
 import { showToast } from './toast.js';
 
-// Auth işlemi devam ediyor mu? (Yarış durumunu önlemek için)
+// Auth işlemi devam ediyor mu? (Üst üste tıklamaları engellemek için)
 let isProcessingAuth = false;
 
-// --- AUTH ---
+// ==========================================
+// 1. KULLANICI GİRİŞ DURUMU KONTROLÜ
+// ==========================================
 onAuthStateChanged(auth, async (user) => {
-    if (isProcessingAuth) {
-        return;
-    }
+    if (isProcessingAuth) return;
 
     if (user) {
         const isGoogleUser = user.providerData.some(p => p.providerId === 'google.com');
 
-        if (!isGoogleUser) {
-            try {
-                const verificationDoc = await getDoc(doc(db, "verified_users", user.uid));
+        // EĞER KULLANICI GOOGLE İLE GİRMEDİYSE VE MAİLİNİ DOĞRULAMADIYSA:
+        // Admin kontrolünü buraya da ekliyoruz
+const isAdmin = ADMIN_UIDS.includes(user.uid);
 
-                if (!verificationDoc.exists() || !verificationDoc.data().verified) {
-                    state.currentUser = null;
-                    state.loading = false;
-                    window.render();
-                    return;
-                }
-            } catch (e) {
-                console.error('Doğrulama kontrolü hatası:', e);
-            }
+// EĞER KULLANICI GOOGLE İLE GİRMEDİYSE VE MAİLİ ONAYLI DEĞİLSE VE ADMİN DEĞİLSE:
+if (!isGoogleUser && !user.emailVerified && !isAdmin) {
+    await signOut(auth); // Sistemden at
+            state.currentUser = null;
+            state.loading = false;
+            window.render();
+            return;
         }
 
+        // Kullanıcı giriş yaptı ve doğrulandı, verileri yükle
         state.currentUser = { uid: user.uid, email: user.email };
-        state.pendingVerification = false;
         await loadExpensesFromFirebase();
         window.checkAndFixFutureExpenses();
     } else {
+        // Çıkış yapıldıysa veya oturum yoksa verileri sıfırla
         state.currentUser = null;
         state.expenses = {};
     }
@@ -47,35 +45,42 @@ onAuthStateChanged(auth, async (user) => {
     window.render();
 });
 
+// ==========================================
+// 2. GİRİŞ YAP (LOGIN) FONKSİYONU
+// ==========================================
 window.handleLogin = async function() {
     if (!state.loginForm.email || !state.loginForm.password) return;
 
     isProcessingAuth = true;
+    state.loginError = '';
+    window.render();
 
     try {
         const userCredential = await signInWithEmailAndPassword(auth, state.loginForm.email, state.loginForm.password);
 
-        const isGoogleUser = userCredential.user.providerData.some(p => p.providerId === 'google.com');
+        // Google kullanıcısı değilse doğrulama kontrolü yap
+        // Google kullanıcısı değilse ve ADMİN DEĞİLSE doğrulama kontrolü yap
+const isGoogleUser = userCredential.user.providerData.some(p => p.providerId === 'google.com');
+const isAdmin = ADMIN_UIDS.includes(userCredential.user.uid); // <-- Admin mi diye baktık
 
-        if (!isGoogleUser) {
-            const verificationDoc = await getDoc(doc(db, "verified_users", userCredential.user.uid));
-
-            if (!verificationDoc.exists() || !verificationDoc.data().verified) {
-                await signOut(auth);
-                state.loginError = 'Email doğrulaması tamamlanmamış. Lütfen önce kayıt olun.';
-                isProcessingAuth = false;
-                window.render();
-                return;
-            }
+// Eğer Google kullanıcısı değilse VE maili doğrulanmadıysa VE admin değilse:
+if (!isGoogleUser && !userCredential.user.emailVerified && !isAdmin) {
+            await signOut(auth);
+            state.loginError = 'Lütfen önce e-posta adresinizi doğrulayın. Gelen kutunuzu (veya Spam/Gereksiz klasörünü) kontrol edin.';
+            isProcessingAuth = false;
+            window.render();
+            return;
         }
 
+        // Başarılı giriş
         state.currentUser = { uid: userCredential.user.uid, email: userCredential.user.email };
-        state.loginError = '';
         await loadExpensesFromFirebase();
 
     } catch (error) {
         if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found') {
-            state.loginError = 'Email veya şifre hatalı';
+            state.loginError = 'Email veya şifre hatalı!';
+        } else if (error.code === 'auth/too-many-requests') {
+            state.loginError = 'Çok fazla deneme yaptınız. Lütfen biraz bekleyip tekrar deneyin.';
         } else {
             state.loginError = 'Giriş yapılamadı: ' + error.message;
         }
@@ -85,207 +90,54 @@ window.handleLogin = async function() {
     window.render();
 };
 
-// 4 Haneli kod gönderme fonksiyonu
-async function sendVerificationCode(email) {
-    const code = Math.floor(1000 + Math.random() * 9000).toString();
-
-    try {
-        emailjs.init(EMAILJS_PUBLIC_KEY);
-
-        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-            to_email: email,
-            verification_code: code,
-            to_name: email.split('@')[0]
-        });
-
-        return code;
-    } catch (error) {
-        console.error('EmailJS hatası:', error);
-        throw new Error('Doğrulama kodu gönderilemedi. Lütfen tekrar deneyin.');
-    }
-}
-
-let timerInterval = null;
-
-function startVerificationTimer() {
-    if (timerInterval) clearInterval(timerInterval);
-
-    updateTimerUI();
-
-    timerInterval = setInterval(() => {
-        const now = Date.now();
-
-        if (now > state.codeExpiry) {
-            clearInterval(timerInterval);
-            window.render();
-            return;
-        }
-
-        updateTimerUI();
-    }, 1000);
-}
-
-function updateTimerUI() {
-    const timerElement = document.querySelector('[data-timer]');
-    if (!timerElement) return;
-
-    const remaining = Math.max(0, Math.floor((state.codeExpiry - Date.now()) / 1000));
-    const mins = Math.floor(remaining / 60);
-    const secs = remaining % 60;
-    const timeDisplay = `${mins}:${secs.toString().padStart(2, '0')}`;
-
-    timerElement.className = remaining < 60 ? 'font-mono font-bold text-red-500' : 'font-mono font-bold text-amber-500';
-    timerElement.textContent = timeDisplay;
-}
-
+// ==========================================
+// 3. KAYIT OL (REGISTER) FONKSİYONU
+// ==========================================
 window.handleRegister = async function() {
     if (!state.loginForm.email || !state.loginForm.password) return;
 
     if (state.loginForm.password.length < 6) {
-        state.loginError = 'Şifre en az 6 karakter olmalı';
+        state.loginError = 'Şifre en az 6 karakter olmalı!';
         window.render();
         return;
     }
 
-    state.codeSending = true;
+    state.codeSending = true; // Yükleniyor efekti
     state.loginError = '';
     window.render();
 
     try {
-        const code = await sendVerificationCode(state.loginForm.email);
+        // 1. Adım: Kullanıcıyı oluştur
+        const userCredential = await createUserWithEmailAndPassword(auth, state.loginForm.email, state.loginForm.password);
 
-        state.verificationEmail = state.loginForm.email;
-        state.tempPassword = state.loginForm.password;
-        state.verificationCode = code;
-        state.codeExpiry = Date.now() + (3 * 60 * 1000);
-        state.codeInput = ['', '', '', ''];
-        state.pendingVerification = true;
-        state.codeSending = false;
+        // 2. Adım: Firebase Doğrulama Linki Gönder
+        await sendEmailVerification(userCredential.user);
 
-        showToast('📧 Doğrulama kodu gönderildi!');
+        // 3. Adım: Kullanıcıyı sistemden at (Mailini doğrulamadan giremesin)
+        await signOut(auth);
 
-        window.render();
-        startVerificationTimer();
-
-    } catch (error) {
-        state.loginError = error.message;
-        state.codeSending = false;
-        window.render();
-    }
-};
-
-window.handleCodeInput = function(index, value) {
-    const digit = value.replace(/\D/g, '').slice(-1);
-
-    state.codeInput[index] = digit;
-
-    const currentInput = document.getElementById(`code-input-${index}`);
-    if (currentInput) {
-        currentInput.value = digit;
-    }
-
-    if (digit && index < 3) {
-        const nextInput = document.getElementById(`code-input-${index + 1}`);
-        if (nextInput) {
-            nextInput.focus();
-        }
-    }
-};
-
-window.handleCodeKeydown = function(index, event) {
-    if (event.key === 'Backspace' && !state.codeInput[index] && index > 0) {
-        setTimeout(() => {
-            document.getElementById(`code-input-${index - 1}`)?.focus();
-        }, 0);
-    }
-};
-
-window.verifyCode = async function() {
-    const enteredCode = state.codeInput.join('');
-
-    if (enteredCode.length !== 4) {
-        state.loginError = 'Lütfen 4 haneli kodu girin';
-        window.render();
-        return;
-    }
-
-    if (Date.now() > state.codeExpiry) {
-        state.loginError = 'Kodun süresi doldu. Lütfen yeni kod isteyin.';
-        window.render();
-        return;
-    }
-
-    if (enteredCode !== state.verificationCode) {
-        state.loginError = 'Hatalı kod. Lütfen tekrar deneyin.';
-        state.codeInput = ['', '', '', ''];
-        window.render();
-        setTimeout(() => {
-            document.getElementById('code-input-0')?.focus();
-        }, 100);
-        return;
-    }
-
-    isProcessingAuth = true;
-
-    try {
-        const userCredential = await createUserWithEmailAndPassword(auth, state.verificationEmail, state.tempPassword);
-
-        await setDoc(doc(db, "verified_users", userCredential.user.uid), {
-            email: state.verificationEmail,
-            verified: true,
-            verifiedAt: new Date().toISOString()
-        });
-
-        state.currentUser = { uid: userCredential.user.uid, email: state.verificationEmail };
-        state.pendingVerification = false;
-        state.verificationCode = '';
-        state.tempPassword = '';
-        state.loginError = '';
-        showToast('✅ Hesabınız oluşturuldu!');
+        // 4. Adım: Ekranı temizle ve bilgi ver
+        state.isRegistering = false;
+        state.loginForm.password = '';
+        showToast('📧 Başarılı! E-posta adresinize bir doğrulama linki gönderdik. Tıklayıp hesabınızı aktifleştirin.');
 
     } catch (error) {
         if (error.code === 'auth/email-already-in-use') {
-            state.loginError = 'Bu email zaten kayıtlı. Giriş yapmayı deneyin.';
+            state.loginError = 'Bu e-posta adresi zaten kullanımda. Giriş yapmayı deneyin.';
+        } else if (error.code === 'auth/invalid-email') {
+            state.loginError = 'Geçersiz bir e-posta adresi girdiniz.';
         } else {
             state.loginError = 'Hesap oluşturulamadı: ' + error.message;
         }
-        state.pendingVerification = false;
     }
 
-    isProcessingAuth = false;
+    state.codeSending = false;
     window.render();
 };
 
-window.resendVerificationCode = async function() {
-    state.codeSending = true;
-    state.loginError = '';
-    window.render();
-
-    try {
-        const code = await sendVerificationCode(state.verificationEmail);
-        state.verificationCode = code;
-        state.codeExpiry = Date.now() + (3 * 60 * 1000);
-        state.codeInput = ['', '', '', ''];
-        state.codeSending = false;
-        showToast('📧 Yeni kod gönderildi!');
-    } catch (error) {
-        state.loginError = error.message;
-        state.codeSending = false;
-    }
-
-    window.render();
-};
-
-window.backToLogin = function() {
-    state.pendingVerification = false;
-    state.verificationEmail = '';
-    state.verificationCode = '';
-    state.tempPassword = '';
-    state.codeInput = ['', '', '', ''];
-    state.loginError = '';
-    window.render();
-};
-
+// ==========================================
+// 4. GOOGLE İLE GİRİŞ FONKSİYONU
+// ==========================================
 window.handleGoogleLogin = async () => {
     try {
         const result = await signInWithPopup(auth, googleProvider);
@@ -294,17 +146,30 @@ window.handleGoogleLogin = async () => {
         await loadExpensesFromFirebase();
         window.render();
     } catch (error) {
-        console.error("Google Login Detayı:", error);
-
+        console.error("Google Login Hatası:", error);
         if (error.code !== 'auth/popup-closed-by-user') {
-            state.loginError = 'Hata: ' + error.message;
+            state.loginError = 'Giriş yapılamadı: ' + error.message;
             window.render();
         }
     }
 };
 
-window.handleLogout = async () => { await signOut(auth); state.currentUser = null; state.expenses = {}; window.render(); };
-window.toggleRegister = () => { state.isRegistering = !state.isRegistering; state.loginError = ''; window.render(); };
+// ==========================================
+// 5. ÇIKIŞ VE ARAYÜZ YARDIMCI FONKSİYONLARI
+// ==========================================
+window.handleLogout = async () => {
+    await signOut(auth);
+    state.currentUser = null;
+    state.expenses = {};
+    window.render();
+};
+
+window.toggleRegister = () => {
+    state.isRegistering = !state.isRegistering;
+    state.loginError = '';
+    window.render();
+};
+
 window.toggleDarkMode = () => {
     state.darkMode = !state.darkMode;
     localStorage.setItem('darkMode', state.darkMode);

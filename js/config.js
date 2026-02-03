@@ -3,11 +3,11 @@ import {
     getAuth,
     signInWithEmailAndPassword,
     createUserWithEmailAndPassword,
+    sendEmailVerification, // <-- İŞTE BURADA: Doğrulama maili gönderme komutu
     signOut,
     onAuthStateChanged,
     GoogleAuthProvider,
     signInWithPopup,
-    sendEmailVerification,
     updateEmail,
     updatePassword,
     reauthenticateWithCredential,
@@ -15,16 +15,13 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, deleteDoc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+// Sadece senin admin UID'lerin (Eski EmailJS kodlarını buradan sildik)
 const ADMIN_UIDS = [
     "eq3Gz056elTc4uv8nT7LjbcSF7I3",
     "zH4fSotT2wONTpjEmLuhEyB1QeU2"
 ];
 
-// EmailJS Yapılandırması
-const EMAILJS_PUBLIC_KEY = "69evAT7YVkcEVLN4E";
-const EMAILJS_SERVICE_ID = "service_unomeqi";
-const EMAILJS_TEMPLATE_ID = "template_w3zotzc";
-
+// Senin Firebase ayarların (Değişmedi)
 const firebaseConfig = {
     apiKey: "AIzaSyCAeEg9FE0xHb4NExWbIPOowrCX13etuPg",
     authDomain: "altin-butce.firebaseapp.com",
@@ -38,6 +35,8 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
+
+// Çevrimdışı (İnternetsiz) çalışma özelliği
 enableIndexedDbPersistence(db)
   .catch((err) => {
       if (err.code == 'failed-precondition') {
@@ -46,16 +45,25 @@ enableIndexedDbPersistence(db)
           console.log("Tarayıcınız offline modu desteklemiyor.");
       }
   });
+
 const googleProvider = new GoogleAuthProvider();
 const BACKEND_URL = "https://gold-760939137722.europe-west1.run.app/";
 
+// --- DİĞER SAYFALARIN KULLANABİLMESİ İÇİN DIŞA AKTARIYORUZ ---
 export {
     auth, db, googleProvider, BACKEND_URL, ADMIN_UIDS,
-    EMAILJS_PUBLIC_KEY, EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID,
-    // Firebase auth fonksiyonları
-    signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged,
-    signInWithPopup, sendEmailVerification, updateEmail, updatePassword,
-    reauthenticateWithCredential, EmailAuthProvider,
-    // Firebase firestore fonksiyonları
+    // Temel Giriş/Çıkış Fonksiyonları
+    signInWithEmailAndPassword, 
+    createUserWithEmailAndPassword, 
+    sendEmailVerification, // <-- Diğer sayfalar kullanabilsin diye dışa aktardık
+    signOut, 
+    onAuthStateChanged,
+    signInWithPopup, 
+    // Profil Güncelleme Fonksiyonları
+    updateEmail, 
+    updatePassword,
+    reauthenticateWithCredential, 
+    EmailAuthProvider,
+    // Veritabanı Fonksiyonları
     doc, setDoc, getDoc, deleteDoc
 };
